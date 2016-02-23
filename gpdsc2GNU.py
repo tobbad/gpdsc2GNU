@@ -11,10 +11,12 @@ import os
 import inspect
 import xml.etree.ElementTree as ET
 import json
-from binding import CreateFromDocument
 from jinja2 import Template
 import re
 import glob
+import tkinter as tk
+import tkinter.filedialog as filedialog
+import functools
 
 thisModule = sys.modules[__name__]
 svnRev=("$Rev: 6738 $").split()[1]
@@ -28,19 +30,65 @@ scriptPath=os.sep.join(__file__.split(os.sep)[0:-1])
 # Helpers
 #
 ################
+class ConfigurationCreator(tk.Frame):
+    def __init__(self, fields, master=None):
+        tk.Frame.__init__(self, master)
+        self.__root = master
+        self._fields = fields
+        self.result = {}
+        self.entryWid={}
+        for desc, name, value in self._fields:
+            self.result[name] = ""
+        self.dir_opt = options = {}
+        options['initialdir'] = ''
+        options['mustexist'] = True
+        options['parent'] = self.__root
+        options['title'] = "Configuration entry"
+        self.createWidgets()
+
+    def createWidgets(self):
+        self.grid()
+        for row, (desc, field, value) in enumerate(self._fields):
+            lbl = tk.Label(self,text = desc)
+            lbl.grid(row = row, column = 0, sticky=(tk.W))
+            self.entryWid[field] = tk.Entry(self, textvariable=value)
+            self.entryWid[field].grid(row = row, column = 1, sticky=(tk.N))
+            btn = tk.Button(text = "Browse", command=functools.partial(self.getFolder, field))
+            btn.grid(row = row, column = 1,sticky=(tk.N,))
+        self.QUIT = tk.Button(self, text="QUIT", fg="red", command=self.__root.destroy)
+        self.QUIT.grid(column=0, row=len(self._fields), columnspan=2, sticky= (tk.W, tk.E))
+
+    def getFolder(self, field):
+        path =  filedialog.askdirectory(**self.dir_opt)
+        self.result[field]= path.split(os.sep)
+        self.entryWid[field].delete(0, tk.END)
+        self.entryWid[field].insert(0, path)
+
+
+
 class Configuration(object):
 
     __CONFIG = (".config","gpdsc2gnu.json")
+    __ENTRIES = ( ("Location of stm32CubeMx", 'cubemx_location',""),
+                  ("Location of stm32cube_fw Repository",'repository_location',"oga oga oga"))
 
     def __init__(self):
         path = tuple(os.environ['HOME'].split(os.sep))+self.__CONFIG
         self.__cfName = os.sep.join(path)
         if not os.path.exists(self.__cfName):
-            baseConfig = {'cubemx_location':('','opt','stm','stm32cubemx')}
-            with open(self.__cfName,'w') as fd:
-                json.dump(baseConfig, fd)
+            self._ModifyConf()
         with open(self.__cfName) as fd:
             self._conf = json.load(fd)
+        if len(self._conf) < len(self.__ENTRIES):
+            self._ModifyConf()
+
+    def _ModifyConf(self):
+        root = tk.Tk()
+        app = ConfigurationCreator(self.__ENTRIES, master=root)
+        app.mainloop()
+        with open(self.__cfName,'w') as fd:
+            json.dump(app.result, fd)
+        self._conf = app.result
 
     @property
     def families(self):
